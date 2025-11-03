@@ -104,6 +104,119 @@ function calcStandings(t){
   }).map((p,i)=>({ rank:i+1, ...p }))
 }
 function hasPlayed(t,a,b){ return t.rounds.some(r=> r.pairings.some(m=> (m.p1===a&&m.p2===b)||(m.p1===b&&m.p2===a) )) }
+
+function eliminationPairings(t) {
+  const base = Math.max(1, t.rounds.reduce((acc,r)=> Math.max(acc, ...(r.pairings.map(m=>m.table)) ), 0) + 1)
+  const pairs = []
+  
+  // Si es la primera ronda, ordenamos a los jugadores aleatoriamente
+  if (t.rounds.length === 0) {
+    // Obtener jugadores activos (no en estado dropped)
+    const activePlayers = t.players.filter(p => !p.dropped)
+    
+    // Verificar si tenemos suficientes jugadores
+    if (activePlayers.length < 2) {
+      return pairs
+    }
+    
+    // Calcular el número de participantes necesarios para el bracket
+    // En eliminación, debe ser potencia de 2: 2, 4, 8, 16, 32, etc.
+    const nextPowerOfTwo = Math.pow(2, Math.ceil(Math.log2(activePlayers.length)))
+    
+    // Determinar cuántos jugadores recibirán bye en la primera ronda
+    const byesCount = nextPowerOfTwo - activePlayers.length
+    
+    // Ordenar aleatoriamente los jugadores
+    const shuffledPlayers = [...activePlayers].sort(() => Math.random() - 0.5)
+    
+    // Generar los emparejamientos iniciales
+    let pairsCount = 0
+    const playerIds = shuffledPlayers.map(p => p.id)
+    
+    // Primero asignar los byes si es necesario
+    for (let i = 0; i < byesCount && playerIds.length > 0; i++) {
+      // El jugador con bye avanza automáticamente
+      const luckyPlayer = playerIds.shift()
+      pairs.push({ 
+        id: uid('m'), 
+        table: base + pairsCount++, 
+        p1: luckyPlayer, 
+        p2: null, 
+        p1Wins: 2, 
+        p2Wins: 0, 
+        result: 'BYE' 
+      })
+    }
+    
+    // Emparejar el resto de jugadores
+    while (playerIds.length >= 2) {
+      const p1 = playerIds.shift()
+      const p2 = playerIds.shift()
+      pairs.push({ 
+        id: uid('m'), 
+        table: base + pairsCount++, 
+        p1: p1, 
+        p2: p2, 
+        p1Wins: 0, 
+        p2Wins: 0, 
+        result: null 
+      })
+    }
+    
+    return pairs
+  } else {
+    // Para rondas subsecuentes, emparejamos a los ganadores de la ronda anterior
+    const previousRound = t.rounds[t.rounds.length - 1]
+    const winners = []
+    
+    // Recolectar a los ganadores de la ronda anterior
+    previousRound.pairings.forEach(match => {
+      if (match.result === 'P1') {
+        winners.push(match.p1)
+      } else if (match.result === 'P2') {
+        winners.push(match.p2)
+      } else if (match.result === 'BYE') {
+        // En caso de bye, el p1 avanza automáticamente
+        winners.push(match.p1)
+      }
+    })
+    
+    // Si solo queda un jugador, hemos terminado el torneo
+    if (winners.length <= 1) {
+      return [];
+    }
+    
+    // Emparejar a los ganadores
+    let pairsCount = 0
+    for (let i = 0; i < winners.length; i += 2) {
+      if (i + 1 < winners.length) {
+        pairs.push({
+          id: uid('m'),
+          table: base + pairsCount++,
+          p1: winners[i],
+          p2: winners[i + 1],
+          p1Wins: 0,
+          p2Wins: 0,
+          result: null
+        })
+      } else if (i < winners.length) {
+        // Si queda un jugador sin pareja, recibe bye
+        pairs.push({
+          id: uid('m'),
+          table: base + pairsCount++,
+          p1: winners[i],
+          p2: null,
+          p1Wins: 2,
+          p2Wins: 0,
+          result: 'BYE'
+        })
+      }
+    }
+    
+    return pairs
+  }
+}
+
 function swissPairings(t){
   const base = Math.max(1, t.rounds.reduce((acc,r)=> Math.max(acc, ...(r.pairings.map(m=>m.table)) ), 0) + 1)
   const actives = t.players.filter(p=>!p.dropped)
@@ -178,11 +291,67 @@ export default function App({ initialTournament, onTournamentChange, initialView
   // actions
   const addPlayer = (nm) => { nm=String(nm||'').trim(); if(!nm) return; setT({...t, players:[...t.players, {id:uid('p'), name:nm, dropped:false}]}) }
   const bulkTextAdd = (txt) => {
-    const list = String(txt||'').split(/\\r?\\n|,|;/).map(s=>s.trim()).filter(Boolean)
+    // Normalizar separadores y realizar una limpieza más exhaustiva
+    // Acepta: Saltos de línea, comas, puntos y comas, tabulaciones, espacios múltiples
+    let normalizedText = String(txt || '')
+      .replace(/\t+/g, ' ')        // Convertir tabulaciones a espacios
+      .replace(/\s*[;,]\s*/g, '\n') // Reemplazar ; y , por saltos de línea
+      .replace(/\s+\n/g, '\n')     // Limpiar espacios antes de saltos de línea
+      .replace(/\n\s+/g, '\n')     // Limpiar espacios después de saltos de línea
+      
+    // Dividir por saltos de línea y limpiar cada entrada
+    const list = normalizedText
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean) // Eliminar entradas vacías
+      
     if(!list.length) return
-    const exist = new Set(t.players.map(p=>p.name.toLowerCase()))
-    const toAdd = list.filter(n=>!exist.has(n.toLowerCase())).map(n=>({id:uid('p'), name:n, dropped:false}))
+    
+    // Detectar y procesar nombres con posibles sufijos numéricos (como rankings)
+    const processedList = list.map(item => {
+      // Si tiene un número al final precedido por espacio, tab o guión, eliminarlo
+      return item.replace(/[\s\t-]+(\d+)$/g, '').trim()
+    })
+    
+    const exist = new Set(t.players.map(p => p.name.toLowerCase()))
+    const toAdd = processedList
+      .filter(n => !exist.has(n.toLowerCase()))
+      .map(n => ({id: uid('p'), name: n, dropped: false}))
+    
+    // Mostrar feedback sobre jugadores añadidos y duplicados
+    const duplicates = processedList.filter(n => exist.has(n.toLowerCase()))
+    const message = `Añadidos ${toAdd.length} jugadores.
+${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` : ''}`
+    
     setT({...t, players:[...t.players, ...toAdd]})
+    
+    // Mostrar mensaje de confirmación
+    if (toAdd.length > 0) {
+      const confirmationEl = document.createElement('div')
+      confirmationEl.className = 'fixed bottom-4 right-4 bg-green-700/90 text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fadeIn'
+      confirmationEl.innerHTML = `
+        <div class="flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          <div>
+            <p class="font-medium">¡Jugadores añadidos!</p>
+            <p class="text-xs text-white/80">Añadidos ${toAdd.length} jugadores nuevos</p>
+            ${duplicates.length ? `<p class="text-xs text-white/70">Se omitieron ${duplicates.length} duplicados</p>` : ''}
+          </div>
+        </div>
+      `
+      document.body.appendChild(confirmationEl)
+      
+      // Eliminar la notificación después de 3 segundos
+      setTimeout(() => {
+        confirmationEl.classList.add('animate-fadeOut')
+        setTimeout(() => document.body.removeChild(confirmationEl), 500)
+      }, 3000)
+    }
+    
+    return toAdd.length
   }
   const startRound = () => {
     // Verificar que hay suficientes jugadores activos para iniciar la ronda
@@ -196,8 +365,23 @@ export default function App({ initialTournament, onTournamentChange, initialView
       return alert('Faltan resultados en la ronda actual');
     }
     
-    // Generar los emparejamientos para la nueva ronda
-    const pairs = swissPairings(t);
+    // Verificar si es un torneo de eliminación o suizo
+    const system = t.meta.system || 'swiss';
+    
+    // Generar los emparejamientos para la nueva ronda según el sistema
+    let pairs;
+    if (system === 'elimination') {
+      pairs = eliminationPairings(t);
+      
+      // Si no hay pares en eliminación directa, significa que el torneo ha terminado
+      if (pairs.length === 0) {
+        setT({...t, finished: true});
+        return alert('¡El torneo ha finalizado! Ya se ha determinado un ganador.');
+      }
+    } else {
+      // Sistema suizo por defecto
+      pairs = swissPairings(t);
+    }
     
     // Crear la nueva ronda
     setT({...t, rounds:[...t.rounds, {number:t.rounds.length+1, pairings:pairs}], finished:false});
@@ -264,39 +448,325 @@ export default function App({ initialTournament, onTournamentChange, initialView
     setT({...t, finished:true})
   }
   const exportPDF = (type) => {
+    // Configuración base del documento
     const doc = new jsPDF()
-    doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(0,191,255)
-    doc.text('COMUNIDAD CSWO — Arena Manager', 105, 16, { align:'center' })
-    doc.setDrawColor(0,191,255); doc.line(15,18,195,18)
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(0,0,0)
-    doc.text(`Torneo: ${t.meta.name}`, 16, 24); doc.text(`Fecha: ${t.meta.date}`, 100, 24); doc.text(`Ronda: ${roundCounter}`, 160, 24)
-    let y = 32
-
-    if(type==='rounds'){
+    
+    // Colores del tema TCG
+    const primaryColor = [0, 110, 185]  // Azul oscuro
+    const accentColor = [0, 191, 255]   // Cyan
+    const goldColor = [255, 215, 0]     // Dorado
+    const darkGray = [50, 50, 55]       // Gris oscuro
+    
+    // Dibujar fondo con estilo TCG
+    doc.setFillColor(240, 240, 245)     // Fondo claro
+    doc.rect(0, 0, 210, 297, 'F')       // Rectángulo de fondo completo
+    
+    // Barra superior
+    doc.setFillColor(...primaryColor)
+    doc.rect(0, 0, 210, 30, 'F')
+    
+    // Decoraciones estilo TCG
+    // Borde decorativo
+    doc.setDrawColor(...accentColor)
+    doc.setLineWidth(1.5)
+    doc.roundedRect(10, 35, 190, 250, 3, 3, 'S')
+    
+    // Elementos decorativos - Estilo tarjeta
+    doc.setDrawColor(...goldColor)
+    doc.setLineWidth(0.5)
+    doc.roundedRect(12, 37, 186, 246, 2, 2, 'S')
+    
+    // Encabezado con estilo TCG
+    doc.addImage(createTCGHeaderImage(), 'PNG', 30, 5, 150, 20)
+    
+    // Información del torneo en un cuadro de estilo TCG
+    doc.setFillColor(245, 245, 250, 0.9)  // Fondo semi-transparente
+    doc.roundedRect(15, 40, 180, 20, 2, 2, 'F')
+    doc.setDrawColor(...accentColor)
+    doc.setLineWidth(0.3)
+    doc.roundedRect(15, 40, 180, 20, 2, 2, 'S')
+    
+    // Información del torneo
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.setTextColor(...primaryColor)
+    doc.text(`TORNEO: ${t.meta.name.toUpperCase()}`, 20, 50)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.text(`Fecha: ${t.meta.date}`, 20, 56)
+    doc.text(`Ronda: ${roundCounter}`, 170, 56, {align: 'right'})
+    
+    // Iniciar posición Y para el contenido
+    let y = 70
+    
+    // PDF para rondas
+    if (type === 'rounds') {
+      // Título de la sección
+      addSectionHeader(doc, 'EMPAREJAMIENTOS', y)
+      y += 15
+      
       t.rounds.forEach(r => {
-        doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text(`Ronda ${r.number}`, 16, y); y+=6
-        doc.setFont('helvetica','normal'); doc.setFontSize(11)
+        // Encabezado de ronda con estilo TCG
+        doc.setFillColor(...primaryColor)
+        doc.setDrawColor(...goldColor)
+        doc.roundedRect(15, y-5, 180, 10, 1, 1, 'FD')
+        doc.setFontSize(12)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(255, 255, 255)  // Texto blanco
+        doc.text(`RONDA ${r.number}`, 105, y, { align: 'center' })
+        y += 10
+        
+        // Tabla de emparejamientos
+        doc.setDrawColor(...darkGray)
+        doc.setFillColor(245, 245, 250)  // Fondo claro para tabla
+        doc.setLineWidth(0.1)
+        
+        // Encabezados de tabla
+        drawTableRow(doc, ['MESA', 'JUGADOR A', 'JUGADOR B'], y, true)
+        y += 8
+        
+        // Filas de la tabla
         r.pairings.forEach(m => {
           const p1 = byId[m.p1]?.name || '??'
           const p2 = m.p2? (byId[m.p2]?.name || '??') : 'BYE'
-          const res = m.result===RESULT.P1? 'Gana A' : m.result===RESULT.P2? 'Gana B' : m.result===RESULT.DRAW? 'Empate' : ''
-          doc.text(`Mesa ${m.table}: ${p1} (${m.p1Wins||0}) vs ${p2} (${m.p2Wins||0}) ${res}`, 20, y); y+=6
-          if (y>280) { doc.addPage(); y=20 }
+          
+          drawTableRow(doc, [
+            `${m.table}`, 
+            p1, 
+            p2
+          ], y, false)
+          y += 7
+          
+          if (y > 270) { 
+            doc.addPage()
+            y = 40 
+            // Repetir encabezado en la nueva página
+            doc.setFillColor(...primaryColor)
+            doc.roundedRect(15, y-5, 180, 10, 1, 1, 'F')
+            doc.setFontSize(12)
+            doc.setTextColor(255, 255, 255)
+            doc.text(`RONDA ${r.number} (continuación)`, 105, y, { align: 'center' })
+            y += 10
+            drawTableRow(doc, ['MESA', 'JUGADOR A', 'JUGADOR B'], y, true)
+            y += 8
+          }
         })
-        y+=4; if (y>280) { doc.addPage(); y=20 }
+        
+        y += 10
+        if (y > 270) { doc.addPage(); y = 40 }
       })
-      doc.setFont('helvetica','italic'); doc.setTextColor(0,0,0); doc.text('By CSWO Team', 105, 290, {align:'center'})
-      doc.save('CSWO_Rondas.pdf'); return
+      
+      // Pie de página con estilo
+      addFooter(doc)
+      doc.save(`Torneo_${slugify(t.meta.name)}_Rondas.pdf`)
+      return
     }
-
+    
+    // PDF para clasificación
     const st = standings
-    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('Clasificación', 16, y); y+=6
-    doc.text('#',16,y); doc.text('Jugador',24,y); doc.text('Pts',120,y); doc.text('W',140,y); doc.text('D',150,y); doc.text('L',160,y); doc.text('OMW%',174,y,{align:'right'}); y+=4
-    doc.setDrawColor(150); doc.line(16,y,194,y); y+=6
-    doc.setFont('helvetica','normal')
-    st.forEach(p=>{ doc.text(String(p.rank),16,y); doc.text(p.name,24,y); doc.text(String(p.points),120,y); doc.text(String(p.wins),140,y); doc.text(String(p.draws),150,y); doc.text(String(p.losses),160,y); doc.text((p.omw*100).toFixed(1),174,y,{align:'right'}); y+=6; if(y>280){ doc.addPage(); y=20 } })
-    doc.setFont('helvetica','italic'); doc.setTextColor(0,0,0); doc.text('By CSWO Team', 105, 290, {align:'center'})
-    doc.save(type==='final' ? 'CSWO_Clasificacion_Final.pdf' : 'CSWO_Clasificacion.pdf')
+    
+    // Título de la sección con estilo TCG
+    addSectionHeader(doc, 'CLASIFICACIÓN', y)
+    y += 15
+    
+    // Tabla de clasificación
+    doc.setDrawColor(...darkGray)
+    doc.setLineWidth(0.1)
+    
+    // Encabezados de la tabla
+    drawTableRow(doc, [
+      '#', 'JUGADOR', 'PTS', 'V', 'E', 'D', 'OMW%'
+    ], y, true)
+    y += 8
+    
+    // Filas de la tabla
+    st.forEach((p, index) => {
+      // Destacar primeros puestos
+      let isHighlighted = index < 3
+      
+      drawTableRow(doc,
+        [
+          String(p.rank),
+          p.dropped ? `${p.name} (Drop)` : p.name,
+          String(p.points),
+          String(p.wins),
+          String(p.draws),
+          String(p.losses),
+          (p.omw*100).toFixed(1)
+        ],
+        y,
+        false,
+        isHighlighted
+      )
+      y += 7
+      
+      if (y > 270) { 
+        doc.addPage()
+        y = 40
+        // Repetir encabezado en la nueva página
+        addSectionHeader(doc, 'CLASIFICACIÓN (continuación)', y)
+        y += 15
+        drawTableRow(doc, [
+          '#', 'JUGADOR', 'PTS', 'V', 'E', 'D', 'OMW%'
+        ], y, true)
+        y += 8
+      }
+    })
+    
+    // Leyenda
+    y += 10
+    doc.setFontSize(9)
+    doc.setTextColor(...darkGray)
+    doc.text('V: Victorias | E: Empates | D: Derrotas | OMW%: Porcentaje de victorias de oponentes', 105, y, {align: 'center'})
+    
+    // Pie de página con estilo
+    addFooter(doc)
+    doc.save(`Torneo_${slugify(t.meta.name)}_${type==='final' ? 'Clasificacion_Final' : 'Clasificacion'}.pdf`)
+  }
+  
+  // Función auxiliar para crear imagen de encabezado estilo TCG
+  function createTCGHeaderImage() {
+    // Crear un canvas para generar la imagen
+    const canvas = document.createElement('canvas')
+    canvas.width = 600
+    canvas.height = 80
+    const ctx = canvas.getContext('2d')
+    
+    // Fondo degradado
+    const gradient = ctx.createLinearGradient(0, 0, 600, 0)
+    gradient.addColorStop(0, '#003366')
+    gradient.addColorStop(0.5, '#0059b3')
+    gradient.addColorStop(1, '#003366')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, 600, 80)
+    
+    // Añadir efectos de brillo
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.lineTo(600, 0)
+    ctx.lineTo(450, 80)
+    ctx.lineTo(0, 80)
+    ctx.closePath()
+    ctx.fill()
+    
+    // Destellos
+    for (let i = 0; i < 5; i++) {
+      const x = Math.random() * 600
+      const y = Math.random() * 80
+      const radius = Math.random() * 2 + 1
+      ctx.fillStyle = 'rgba(255,255,255,0.6)'
+      ctx.beginPath()
+      ctx.arc(x, y, radius, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    
+    // Texto principal
+    ctx.font = 'bold 40px Arial'
+    ctx.fillStyle = '#FFFFFF'
+    ctx.textAlign = 'center'
+    ctx.shadowColor = '#00BFE1'
+    ctx.shadowBlur = 15
+    ctx.fillText('COMUNIDAD CSWO', 300, 45)
+    
+    // Subtítulo
+    ctx.font = '16px Arial'
+    ctx.shadowBlur = 5
+    ctx.fillText('ARENA MANAGER', 300, 65)
+    
+    return canvas.toDataURL('image/png')
+  }
+  
+  // Función para dibujar una fila de tabla con estilo TCG
+  function drawTableRow(doc, columns, y, isHeader = false, isHighlighted = false) {
+    const cellWidths = [15, 90, 20, 15, 15, 15, 25]  // Ancho de cada columna
+    const xStart = 15
+    let xPos = xStart
+    
+    // Color de fondo según tipo
+    if (isHeader) {
+      doc.setFillColor(0, 110, 185)  // Azul oscuro para encabezados
+    } else if (isHighlighted) {
+      doc.setFillColor(221, 235, 247)  // Azul claro para destacados
+    } else {
+      doc.setFillColor(245, 245, 250)  // Gris muy claro para filas normales
+    }
+    
+    // Dibujar rectángulo de fondo
+    doc.rect(xPos, y-5, cellWidths.reduce((a, b) => a + b, 0), 7, 'F')
+    
+    // Dibujar texto
+    doc.setTextColor(isHeader ? 255 : 0, isHeader ? 255 : 0, isHeader ? 255 : 0)
+    doc.setFont('helvetica', isHeader ? 'bold' : 'normal')
+    doc.setFontSize(isHeader ? 9 : 9)
+    
+    columns.forEach((text, i) => {
+      // Alineación según columna
+      let align = 'left'
+      if (i === 0) align = 'center'  // # centrado
+      if (i > 1) align = 'center'     // Números centrados
+      
+      if (align === 'center') {
+        doc.text(text, xPos + cellWidths[i]/2, y, {align: 'center'})
+      } else {
+        doc.text(text, xPos + 2, y)
+      }
+      
+      // Dibujar líneas de separación de columnas
+      if (i < columns.length - 1) {
+        doc.line(xPos + cellWidths[i], y-5, xPos + cellWidths[i], y+2)
+      }
+      
+      xPos += cellWidths[i]
+    })
+    
+    // Línea horizontal inferior
+    doc.line(xStart, y+2, xPos, y+2)
+  }
+  
+  // Función para añadir un encabezado de sección con estilo TCG
+  function addSectionHeader(doc, title, y) {
+    // Barra decorativa
+    doc.setFillColor(0, 110, 185)  // Azul oscuro
+    doc.rect(15, y-7, 180, 12, 'F')
+    
+    // Detalles decorativos
+    doc.setDrawColor(255, 215, 0)  // Dorado
+    doc.setLineWidth(0.5)
+    doc.line(15, y+5, 195, y+5)
+    
+    // Texto
+    doc.setTextColor(255, 255, 255)  // Blanco
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'bold')
+    doc.text(title, 105, y, {align: 'center'})
+  }
+  
+  // Función para añadir pie de página con estilo TCG
+  function addFooter(doc) {
+    const pageCount = doc.internal.getNumberOfPages()
+    
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      
+      // Barra inferior
+      doc.setFillColor(0, 110, 185)  // Azul oscuro
+      doc.rect(0, 287, 210, 10, 'F')
+      
+      // Texto del pie de página
+      doc.setTextColor(255, 255, 255)  // Blanco
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`CSWO Team - Arena Manager | Página ${i} de ${pageCount} | ${new Date().toLocaleDateString()}`, 105, 293, {align: 'center'})
+      
+      // Número de página con estilo
+      doc.setDrawColor(255, 215, 0)  // Dorado
+      doc.setFillColor(0, 80, 140)   // Azul más oscuro
+      doc.circle(195, 292, 5, 'FD')
+      doc.setTextColor(255, 255, 255) // Blanco
+      doc.setFontSize(8)
+      doc.text(String(i), 195, 294, {align: 'center'})
+    }
   }
   const genLink = () => {
     // Crear una URL absoluta basada en la ubicación actual
@@ -314,34 +784,30 @@ export default function App({ initialTournament, onTournamentChange, initialView
     container.innerHTML = `
       <div style="padding: 20px; max-width: 500px; background: rgba(13,17,23,0.95); border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);">
         <h3 style="margin-top: 0; color: #22d3ee; font-size: 18px;">Compartir torneo</h3>
-        <p style="margin-bottom: 15px; color: #e5e7eb; font-size: 14px;">
-          Hay dos formas de compartir este torneo:
-        </p>
+        
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; color: #e5e7eb; margin-bottom: 5px; font-size: 14px;">Nombre del torneo</label>
+          <input id="tournamentName" style="width: 100%; padding: 8px; border-radius: 5px; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);" placeholder="Mi Torneo CSWO" />
+        </div>
         
         <div style="margin-bottom: 20px;">
-          <h4 style="color: #e5e7eb; font-size: 16px; margin-bottom: 10px;">1. Enlace público (solo vista)</h4>
-          <div style="display: flex; gap: 10px; margin-bottom: 5px;">
-            <input id="publicLink" readonly value="${url.toString()}" style="flex-grow: 1; padding: 8px; border-radius: 5px; background: rgba(255,255,255,0.1); color: white; border: none;">
-            <button id="copyLinkBtn" style="padding: 8px; background: #0284c7; color: white; border: none; border-radius: 5px;">Copiar</button>
-          </div>
+          <label style="display: block; color: #e5e7eb; margin-bottom: 5px; font-size: 14px;">Plantilla</label>
+          <select id="templateSelector" style="width: 100%; padding: 8px; border-radius: 5px; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);">
+            <option value="">Plantilla básica</option>
+            ${loadTemplates().map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+          </select>
           <p style="color: #9ca3af; font-size: 12px; margin-top: 5px;">
-            Este enlace permite ver el torneo pero NO contiene los datos. Si tu servidor no está online, los datos no serán visibles.
+            Selecciona una plantilla para aplicar configuración predefinida.
           </p>
         </div>
         
-        <div>
-          <h4 style="color: #e5e7eb; font-size: 16px; margin-bottom: 10px;">2. Código portable (contiene datos)</h4>
-          <p style="color: #9ca3af; font-size: 12px; margin-bottom: 10px;">
-            Usa esta opción para generar un archivo con todos los datos del torneo que se puede importar en otro dispositivo.
-          </p>
-          <div style="display: flex; justify-content: space-between;">
-            <button id="exportJsonBtn" style="padding: 8px 12px; background: #0284c7; color: white; border: none; border-radius: 5px;">
-              Exportar JSON
-            </button>
-            <button id="closeBtn" style="padding: 8px 12px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 5px;">
-              Cerrar
-            </button>
-          </div>
+        <div style="display: flex; justify-content: space-between;">
+          <button id="closeBtn" style="padding: 8px 12px; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 5px;">
+            Cancelar
+          </button>
+          <button id="createBtn" style="padding: 8px 12px; background: #0284c7; color: white; border: none; border-radius: 5px;">
+            Crear Torneo
+          </button>
         </div>
       </div>
     `;
@@ -352,25 +818,18 @@ export default function App({ initialTournament, onTournamentChange, initialView
     document.body.appendChild(modal);
     
     // Eventos para los botones
-    document.getElementById('copyLinkBtn').addEventListener('click', () => {
-      const linkInput = document.getElementById('publicLink');
-      linkInput.select();
-      document.execCommand('copy');
-      alert('Enlace copiado al portapapeles');
-    });
-    
-    document.getElementById('exportJsonBtn').addEventListener('click', () => {
-      const data = JSON.stringify(t, null, 2);
-      const blob = new Blob([data], {type: 'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `torneo-${t.slug}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-    
     document.getElementById('closeBtn').addEventListener('click', () => {
+      document.body.removeChild(modal);
+    });
+    
+    document.getElementById('createBtn').addEventListener('click', () => {
+      const name = document.getElementById('tournamentName').value || 'Mi Torneo CSWO';
+      const templateId = document.getElementById('templateSelector').value || null;
+      
+      // Crear nuevo torneo con la plantilla seleccionada
+      const nt = emptyTournament(name, templateId);
+      saveTournament(nt);
+      setT(nt);
       document.body.removeChild(modal);
     });
     
@@ -422,7 +881,7 @@ export default function App({ initialTournament, onTournamentChange, initialView
           </main>
           <footer className='text-center text-gray-400 py-8'>
             <div className='text-xs'>
-              © {new Date().getFullYear()} CSWO Team - Arena Manager
+              {new Date().getFullYear()} CSWO Team - Arena Manager
             </div>
           </footer>
         </div>
@@ -443,15 +902,12 @@ export default function App({ initialTournament, onTournamentChange, initialView
         </header>
         <main className='max-w-6xl mx-auto px-4 py-6'>
           <section className='card'>
-            <div className='flex items-center justify-between flex-wrap gap-2'>
-              <div>
-                <h2 className='text-xl font-bold text-cyan-300'>Torneo: {t.meta.name}</h2>
-                <p className='text-gray-300 text-sm'>Fecha: {t.meta.date}</p>
-              </div>
+            <div className='flex items-center justify-between'>
+              <h3 className='text-lg font-semibold text-cyan-300'>Torneo: {t.meta.name}</h3>
               <div className='flex gap-2'>
                 <button onClick={()=>exportPDF('standings')} className='btn-ghost text-sm flex items-center gap-1'>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <line x1="16" y1="13" x2="8" y2="13"></line>
                     <line x1="16" y1="17" x2="8" y2="17"></line>
@@ -487,6 +943,65 @@ export default function App({ initialTournament, onTournamentChange, initialView
           <section className='card mt-4'>
             <h3 className='text-lg font-semibold text-cyan-300'>Rondas</h3>
             {t.rounds.length===0? <p className='text-gray-400'>Aún no hay rondas.</p> :
+              t.meta.system === 'elimination' ? (
+                <div className="mt-4">
+                  <h4 className="text-sm text-cyan-200 mb-2">Bracket de Eliminación Directa</h4>
+                  <div className="overflow-x-auto pb-4">
+                    <div className="bracket-container" style={{display: 'flex', gap: '20px', minWidth: `${t.rounds.length * 220}px`}}>
+                      {t.rounds.map((round, roundIndex) => (
+                        <div key={round.number} style={{flex: '1'}}>
+                          <div className="text-center mb-2 bg-white/5 rounded-md p-1 text-sm">
+                            {roundIndex === t.rounds.length - 1 && round.pairings.length === 1 ? 'Final' : 
+                             roundIndex === t.rounds.length - 2 && t.rounds[t.rounds.length-1].pairings.length === 1 ? 'Semifinal' : 
+                             `Ronda ${round.number}`}
+                          </div>
+                          <div className="round-matches" style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
+                            {round.pairings.map(match => {
+                              const p1 = byId[match.p1]?.name || '??';
+                              const p2 = match.p2 ? (byId[match.p2]?.name || '??') : 'BYE';
+                              const isP1Winner = match.result === 'P1' || match.result === 'BYE';
+                              const isP2Winner = match.result === 'P2';
+                              const isFinal = roundIndex === t.rounds.length - 1 && round.pairings.length === 1;
+                              
+                              return (
+                                <div key={match.id} className="match-card" style={{
+                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  borderRadius: '6px',
+                                  padding: '10px',
+                                  background: isFinal ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.03)'
+                                }}>
+                                  <div className="match-info text-xs text-gray-400 mb-1">Mesa {match.table}</div>
+                                  <div className={`player p-1.5 ${isP1Winner ? 'bg-green-500/20 text-green-300 rounded' : ''}`}>
+                                    {p1}
+                                    {isP1Winner && <span className="ml-2">✓</span>}
+                                    {match.p1Wins > 0 && <span className="float-right">{match.p1Wins}</span>}
+                                  </div>
+                                  <div className="versus text-center text-xs text-gray-500 my-1">vs</div>
+                                  <div className={`player p-1.5 ${isP2Winner ? 'bg-green-500/20 text-green-300 rounded' : ''}`}>
+                                    {p2}
+                                    {isP2Winner && <span className="ml-2">✓</span>}
+                                    {match.p2Wins > 0 && <span className="float-right">{match.p2Wins}</span>}
+                                  </div>
+                                  {isFinal && match.result && (
+                                    <div className="mt-3 pt-2 border-t border-white/10 text-center">
+                                      <div className="text-amber-300 text-sm font-semibold">
+                                        ¡Campeón!
+                                      </div>
+                                      <div className="text-white font-bold">
+                                        {match.result === 'P1' ? p1 : match.result === 'P2' ? p2 : 'Empate'}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : 
               t.rounds.map(r=>(
                 <details key={r.number} className='mt-2 bg-white/5 rounded-xl p-3 border border-white/10' open>
                   <summary className='cursor-pointer select-none'>Ronda {r.number}</summary>
@@ -548,7 +1063,7 @@ export default function App({ initialTournament, onTournamentChange, initialView
                   </thead>
                   <tbody>
                     {standings.map(p=>(
-                      <tr key={p.id} className={`border-b border-white/10 hover:bg-white/5 ${p.rank===1?'bg-amber-500/10':p.rank===2?'bg-slate-400/10':p.rank===3?'bg-yellow-700/10':''}`}>
+                      <tr key={p.id} className={`border-b border-white/10 ${p.rank<=3?'bg-cyan-500/10':''}`}>
                         <td className='px-3 py-2.5'>
                           {p.rank <= 3 && <span className={`mr-1 inline-flex items-center justify-center w-5 h-5 rounded-full text-xs ${p.rank===1?'bg-amber-500/20 text-amber-300':p.rank===2?'bg-slate-400/20 text-slate-300':p.rank===3?'bg-yellow-700/20 text-yellow-600':''}`}>#{p.rank}</span>}
                           {p.rank > 3 && p.rank}
@@ -587,7 +1102,7 @@ export default function App({ initialTournament, onTournamentChange, initialView
             </div>
           </div>
           <div className='text-xs'>
-            © {new Date().getFullYear()} CSWO Team - Arena Manager
+            {new Date().getFullYear()} CSWO Team - Arena Manager
           </div>
         </footer>
       </div>
@@ -783,9 +1298,62 @@ export default function App({ initialTournament, onTournamentChange, initialView
             <button className='btn' onClick={()=>{ const inp=document.querySelector('input[placeholder=\"Nombre del jugador\"]'); addPlayer(inp?.value||''); if(inp) inp.value='' }}>Añadir</button>
           </div>
           <details className='mt-3'>
-            <summary className='cursor-pointer select-none text-sm text-gray-300'>📋 Carga masiva (pega una lista y pulsa “Agregar todo”)</summary>
-            <textarea className='input mt-2 min-h-[120px]' id='bulkArea' placeholder='Una por línea, o separadas por coma'></textarea>
-            <button className='btn mt-2' onClick={()=>{ const ta=document.getElementById('bulkArea'); if(ta) { bulkTextAdd(ta.value); ta.value='' } }}>Agregar todo</button>
+            <summary className='cursor-pointer select-none text-sm text-gray-300 flex items-center gap-1'>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+              </svg>
+              <span>Carga masiva de jugadores</span>
+            </summary>
+            <div className='p-4 border border-white/10 rounded-lg bg-white/5 mt-2'>
+              <div className='text-sm text-gray-300 mb-2'>
+                <p>Pega tu lista de jugadores. Formatos admitidos:</p>
+                <ul className='list-disc pl-5 mt-1 text-xs text-gray-400'>
+                  <li>Un jugador por línea</li>
+                  <li>Separados por comas o punto y coma</li>
+                  <li>Se detectan y eliminan números de ranking (ej. "Jugador 1" → "Jugador")</li>
+                  <li>Los jugadores duplicados se omiten automáticamente</li>
+                </ul>
+              </div>
+              <textarea 
+                className='input mt-2 min-h-[150px] w-full font-mono text-sm' 
+                id='bulkArea' 
+                placeholder='Juan Pérez
+María García
+Carlos Rodríguez
+...
+
+o también: Juan, María, Carlos'
+                onPaste={(e) => {
+                  // Auto-expandir el área de texto al pegar
+                  setTimeout(() => {
+                    const ta = e.target;
+                    const lineCount = ta.value.split('\n').length;
+                    ta.style.height = `${Math.max(150, Math.min(400, lineCount * 22))}px`;
+                  }, 0);
+                }}
+              ></textarea>
+              <div className='flex justify-between items-center mt-3'>
+                <div className='text-xs text-gray-400'>Pega tu lista y haz clic en "Agregar jugadores"</div>
+                <button 
+                  className='btn flex items-center gap-2' 
+                  onClick={()=>{
+                    const ta = document.getElementById('bulkArea');
+                    if(ta) {
+                      const added = bulkTextAdd(ta.value);
+                      if (added) ta.value = '';
+                    }
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                    <polyline points="7 3 7 8 15 8"></polyline>
+                  </svg>
+                  Agregar jugadores
+                </button>
+              </div>
+            </div>
           </details>
           <ul className='mt-4 grid md:grid-cols-2 gap-2'>
             {t.players.map(p=>(
@@ -850,7 +1418,91 @@ export default function App({ initialTournament, onTournamentChange, initialView
             </div>
           </div>
           {t.rounds.length===0 && <p className='text-gray-400 mt-2'>Aún no hay rondas.</p>}
-          {t.rounds.map(r=>(
+          {t.meta.system === 'elimination' && (
+            <div className="mt-4">
+              <h4 className="text-cyan-200 font-semibold mb-2">Bracket de Eliminación</h4>
+              <div className="overflow-x-auto pb-4">
+                <div className="bracket-container" style={{display: 'flex', gap: '20px', minWidth: `${t.rounds.length * 220}px`}}>
+                  {t.rounds.map((round, roundIndex) => (
+                    <div key={round.number} style={{flex: '1'}}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-center bg-white/5 rounded-md p-1 text-sm flex-1">
+                          {roundIndex === t.rounds.length - 1 && round.pairings.length === 1 ? 'Final' : 
+                           roundIndex === t.rounds.length - 2 && t.rounds[t.rounds.length-1].pairings.length === 1 ? 'Semifinal' : 
+                           `Ronda ${round.number}`}
+                        </div>
+                        {round.number === t.rounds.length && !t.finished && (
+                          <button 
+                            className='text-sm text-red-300 hover:bg-red-500/10 hover:text-red-200 px-2 py-1 rounded transition-colors' 
+                            onClick={() => deleteRound(round.number)}
+                            title='Eliminar esta ronda'
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18"></path>
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                      <div className="round-matches" style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
+                        {round.pairings.map(match => (
+                          <div key={match.id} className="match-card bg-white/5 p-3 rounded-lg border border-white/10">
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-xs text-gray-400">Mesa {match.table}</span>
+                              {match.result && <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">
+                                {match.result === 'P1' ? 'Gana A' : match.result === 'P2' ? 'Gana B' : 'Bye'}
+                              </span>}
+                            </div>
+                            
+                            <div className="grid grid-cols-12 gap-2 items-center">
+                              {/* Jugador A */}
+                              <div className="col-span-4">{byId[match.p1]?.name || '??'}</div>
+                              
+                              {/* Puntuación */}
+                              <div className="col-span-6 grid grid-cols-2 gap-2">
+                                <div className='flex items-center gap-2'>
+                                  <span className='text-sm text-gray-400'>A</span>
+                                  <input type='number' min={0} max={3} disabled={!match.p2} 
+                                      className='input' 
+                                      value={match.p1Wins||0} 
+                                      onChange={e=> updateScore(round.number, match.id, 'p1Wins', e.target.value)} />
+                                </div>
+                                <div className='flex items-center gap-2'>
+                                  <span className='text-sm text-gray-400'>B</span>
+                                  <input type='number' min={0} max={3} disabled={!match.p2} 
+                                      className='input' 
+                                      value={match.p2Wins||0} 
+                                      onChange={e=> updateScore(round.number, match.id, 'p2Wins', e.target.value)} />
+                                </div>
+                              </div>
+                              
+                              {/* Botón guardar */}
+                              <div className="col-span-2">
+                                <button className='btn' disabled={!match.p2} 
+                                    onClick={()=> saveResult(round.number, match.id)}>Guardar</button>
+                              </div>
+                            </div>
+                            
+                            {/* Jugador B */}
+                            <div className="mt-2">
+                              <div className="grid grid-cols-12 gap-2 items-center">
+                                <div className="col-span-4">
+                                  {match.p2 ? byId[match.p2]?.name || '??' : 'BYE'}
+                                </div>
+                                <div className="col-span-8"></div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {(t.meta.system !== 'elimination') && t.rounds.map(r=>(
             <div key={r.number} className='mt-4'>
               <div className='flex items-center justify-between mb-2'>
                 <h4 className='text-cyan-300 font-semibold'>Ronda {r.number}</h4>
@@ -925,4 +1577,33 @@ function Status({label, round}){
     </div>
   )
 }
+
+// Agregar estilos CSS para la visualización de brackets en modo de eliminación directa
+const styles = document.createElement('style');
+styles.innerHTML = `
+  /* Estilos para la visualización de brackets */
+  .bracket-container {
+    position: relative;
+  }
+  
+  .bracket-connector {
+    position: absolute;
+    border-top: 1px solid rgba(255,255,255,0.2);
+    border-right: 1px solid rgba(255,255,255,0.2);
+  }
+  
+  /* Estilos para los hover en las tarjetas de partidos */
+  .match-card {
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .match-card:hover {
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3);
+    background-color: rgba(255,255,255,0.05);
+  }
+`;
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.head.appendChild(styles);
+});
 
