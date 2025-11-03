@@ -1,4 +1,26 @@
-@tailwind base;@tailwind components;@tailwind utilities;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Animaciones para notificaciones */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(10px); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-fadeOut {
+  animation: fadeOut 0.3s ease-in forwards;
+}
+
 :root{--neon:#00bfff;--cyan:#5ef1ff}
 html,body,#root{height:100%;margin:0;background:radial-gradient(900px 600px at 10% -10%, rgba(0,191,255,0.12), transparent 60%),radial-gradient(900px 600px at 110% 110%, rgba(0,191,255,0.12), transparent 60%),linear-gradient(180deg,#010512 0%,#000 100%);color:white;font-family:'Rajdhani',system-ui,Arial}
 .neon-title{font-family:'Orbitron',sans-serif;text-shadow:0 0 10px rgba(0,191,255,.9),0 0 24px rgba(0,191,255,.6);animation:glow 2.6s ease-in-out infinite}
