@@ -521,21 +521,23 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
         doc.setFillColor(245, 245, 250)  // Fondo claro para tabla
         doc.setLineWidth(0.1)
         
-        // Encabezados de tabla
-        drawTableRow(doc, ['MESA', 'JUGADOR A', 'JUGADOR B'], y, true)
-        y += 8
+        // Encabezado personalizado para emparejamientos
+        doc.setFillColor(0, 80, 140)  // Azul para encabezado
+        doc.roundedRect(15, y-7, 180, 10, 1, 1, 'F')
+        doc.setTextColor(255, 255, 255)  // Texto blanco
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'bold')
+        doc.text('EMPAREJAMIENTOS', 105, y, {align: 'center'})
+        y += 10
         
         // Filas de la tabla
         r.pairings.forEach(m => {
           const p1 = byId[m.p1]?.name || '??'
           const p2 = m.p2? (byId[m.p2]?.name || '??') : 'BYE'
           
-          drawTableRow(doc, [
-            `${m.table}`, 
-            p1, 
-            p2
-          ], y, false)
-          y += 7
+          // Usar una presentación de enfrentamiento con VS entre jugadores
+          drawMatchRow(doc, m.table, p1, p2, y)
+          y += 12
           
           if (y > 270) { 
             doc.addPage()
@@ -547,7 +549,14 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
             doc.setTextColor(255, 255, 255)
             doc.text(`RONDA ${r.number} (continuación)`, 105, y, { align: 'center' })
             y += 10
-            drawTableRow(doc, ['MESA', 'JUGADOR A', 'JUGADOR B'], y, true)
+            
+            // Encabezado personalizado para la continuación
+            doc.setFillColor(0, 80, 140)  // Azul para encabezado
+            doc.roundedRect(15, y-7, 180, 10, 1, 1, 'F')
+            doc.setTextColor(255, 255, 255)  // Texto blanco
+            doc.setFontSize(11)
+            doc.setFont('helvetica', 'bold')
+            doc.text('EMPAREJAMIENTOS (continuación)', 105, y, {align: 'center'})
             y += 8
           }
         })
@@ -685,15 +694,47 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
     
     // Color de fondo según tipo
     if (isHeader) {
-      doc.setFillColor(0, 110, 185)  // Azul oscuro para encabezados
+      // Gradiente para encabezados
+      const headerColor = [0, 110, 185]  // Azul oscuro para encabezados
+      const headerColorEnd = [0, 80, 140]  // Azul más oscuro para gradiente
+      
+      // Simular gradiente con rectángulos pequeños
+      const totalWidth = cellWidths.reduce((a, b) => a + b, 0);
+      for (let i = 0; i < totalWidth; i++) {
+        const ratio = i / totalWidth;
+        const r = Math.floor(headerColor[0] + ratio * (headerColorEnd[0] - headerColor[0]));
+        const g = Math.floor(headerColor[1] + ratio * (headerColorEnd[1] - headerColor[1]));
+        const b = Math.floor(headerColor[2] + ratio * (headerColorEnd[2] - headerColor[2]));
+        doc.setFillColor(r, g, b);
+        doc.rect(xPos + i, y-5, 1, 7, 'F');
+      }
     } else if (isHighlighted) {
+      // Filas destacadas con efecto brillante
       doc.setFillColor(221, 235, 247)  // Azul claro para destacados
+      doc.rect(xPos, y-5, cellWidths.reduce((a, b) => a + b, 0), 7, 'F')
+      
+      // Efecto de brillo sutil
+      doc.setFillColor(255, 255, 255, 0.2)
+      doc.circle(xPos + 10, y-2, 3, 'F')
     } else {
-      doc.setFillColor(245, 245, 250)  // Gris muy claro para filas normales
+      // Filas normales con degradado muy sutil
+      const normalColor = [245, 245, 250]
+      const normalColorEnd = [235, 235, 240]
+      
+      const totalWidth = cellWidths.reduce((a, b) => a + b, 0);
+      for (let i = 0; i < totalWidth; i++) {
+        const ratio = i / totalWidth;
+        const r = Math.floor(normalColor[0] + ratio * (normalColorEnd[0] - normalColor[0]));
+        const g = Math.floor(normalColor[1] + ratio * (normalColorEnd[1] - normalColor[1]));
+        const b = Math.floor(normalColor[2] + ratio * (normalColorEnd[2] - normalColor[2]));
+        doc.setFillColor(r, g, b);
+        doc.rect(xPos + i, y-5, 1, 7, 'F');
+      }
     }
     
-    // Dibujar rectángulo de fondo
-    doc.rect(xPos, y-5, cellWidths.reduce((a, b) => a + b, 0), 7, 'F')
+    // Dibujar borde redondeado para mejor apariencia
+    doc.setDrawColor(200, 200, 220);
+    doc.roundedRect(xPos, y-5, cellWidths.reduce((a, b) => a + b, 0), 7, 1, 1, 'S');
     
     // Dibujar texto
     doc.setTextColor(isHeader ? 255 : 0, isHeader ? 255 : 0, isHeader ? 255 : 0)
@@ -712,33 +753,122 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
         doc.text(text, xPos + 2, y)
       }
       
-      // Dibujar líneas de separación de columnas
+      // Dibujar líneas de separación de columnas más sutiles
       if (i < columns.length - 1) {
-        doc.line(xPos + cellWidths[i], y-5, xPos + cellWidths[i], y+2)
+        doc.setDrawColor(220, 220, 230);
+        doc.setLineWidth(0.1);
+        doc.line(xPos + cellWidths[i], y-4, xPos + cellWidths[i], y+1)
       }
       
       xPos += cellWidths[i]
     })
     
-    // Línea horizontal inferior
-    doc.line(xStart, y+2, xPos, y+2)
+    // No añadir línea horizontal inferior, ya tenemos el borde redondeado
+  }
+  
+  // Nueva función para dibujar enfrentamientos con estilo VS
+  function drawMatchRow(doc, tableNumber, player1, player2, y) {
+    // Dimensiones y posiciones
+    const xStart = 15
+    const totalWidth = 180
+    const cardHeight = 10
+    
+    // Color de fondo para la tarjeta de enfrentamiento
+    doc.setFillColor(240, 245, 252)  // Azul muy claro
+    doc.roundedRect(xStart, y-6, totalWidth, cardHeight, 3, 3, 'F')
+    
+    // Borde de la tarjeta
+    doc.setDrawColor(180, 190, 210)
+    doc.setLineWidth(0.3)
+    doc.roundedRect(xStart, y-6, totalWidth, cardHeight, 3, 3, 'S')
+    
+    // Número de mesa con estilo de insignia
+    doc.setFillColor(0, 110, 185)  // Azul oscuro
+    doc.circle(xStart + 12, y-1, 6, 'F')
+    
+    // Texto del número de mesa
+    doc.setTextColor(255, 255, 255)  // Blanco
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.text(String(tableNumber), xStart + 12, y-1, {align: 'center'})
+    
+    // Nombre del jugador 1
+    doc.setTextColor(0, 0, 0)  // Negro
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.text(player1, xStart + 25, y-1, {align: 'left', maxWidth: 55})
+    
+    // Círculo VS en el centro con efecto de brillo
+    doc.setFillColor(255, 215, 0)  // Dorado
+    doc.circle(xStart + 90, y-1, 7, 'F')
+    
+    // Efecto de brillo en el círculo VS
+    doc.setFillColor(255, 240, 150)  // Amarillo claro
+    doc.circle(xStart + 88, y-3, 2, 'F')
+    
+    // Texto VS
+    doc.setTextColor(150, 70, 0)  // Marrón dorado
+    doc.setFontSize(7)
+    doc.setFont('helvetica', 'bold')
+    doc.text('VS', xStart + 90, y-1, {align: 'center'})
+    
+    // Nombre del jugador 2
+    doc.setTextColor(0, 0, 0)  // Negro
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.text(player2, xStart + 155, y-1, {align: 'right', maxWidth: 55})
+    
+    // Efecto de sombra sutil
+    doc.setDrawColor(200, 200, 220)
+    doc.setLineWidth(0.2)
+    doc.roundedRect(xStart+0.5, y-5.5, totalWidth-1, cardHeight-1, 3, 3, 'S')
   }
   
   // Función para añadir un encabezado de sección con estilo TCG
   function addSectionHeader(doc, title, y) {
-    // Barra decorativa
-    doc.setFillColor(0, 110, 185)  // Azul oscuro
-    doc.rect(15, y-7, 180, 12, 'F')
+    // Barra decorativa con gradiente
+    const primaryColor = [0, 110, 185]  // Azul oscuro
+    const secondaryColor = [0, 60, 120]  // Azul más oscuro para gradiente
+    
+    // Crear un gradiente lineal horizontal
+    doc.saveGraphicsState();
+    const width = 180;
+    const height = 12;
+    const x = 15;
+    const y0 = y-7;
+    
+    // Simular un gradiente con rectángulos
+    for (let i = 0; i < width; i++) {
+      const ratio = i / width;
+      const r = Math.floor(primaryColor[0] + ratio * (secondaryColor[0] - primaryColor[0]));
+      const g = Math.floor(primaryColor[1] + ratio * (secondaryColor[1] - primaryColor[1]));
+      const b = Math.floor(primaryColor[2] + ratio * (secondaryColor[2] - primaryColor[2]));
+      doc.setFillColor(r, g, b);
+      doc.rect(x + i, y0, 1, height, 'F');
+    }
+    doc.restoreGraphicsState();
+    
+    // Efecto de brillo
+    doc.setFillColor(255, 255, 255, 0.2);
+    doc.circle(180, y-1, 8, 'F');
     
     // Detalles decorativos
     doc.setDrawColor(255, 215, 0)  // Dorado
     doc.setLineWidth(0.5)
     doc.line(15, y+5, 195, y+5)
     
-    // Texto
-    doc.setTextColor(255, 255, 255)  // Blanco
+    // Borde con efecto metálico
+    doc.setDrawColor(0, 60, 120)  // Azul más oscuro
+    doc.roundedRect(15, y-7, 180, 12, 1, 1, 'S')
+    
+    // Texto con efecto de sombra
+    doc.setTextColor(0, 40, 80)  // Color de sombra
     doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
+    doc.text(title, 106, y+1, {align: 'center'})
+    
+    // Texto principal
+    doc.setTextColor(255, 255, 255)  // Blanco
     doc.text(title, 105, y, {align: 'center'})
   }
   
