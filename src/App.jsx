@@ -448,56 +448,34 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
     setT({...t, finished:true})
   }
   const exportPDF = (type) => {
-    // Configuración base del documento
+    // Configuración base del documento - extremadamente minimalista
     const doc = new jsPDF()
     
-    // Colores del tema TCG
-    const primaryColor = [0, 110, 185]  // Azul oscuro
-    const accentColor = [0, 191, 255]   // Cyan
-    const goldColor = [255, 215, 0]     // Dorado
-    const darkGray = [50, 50, 55]       // Gris oscuro
+    // Fondo blanco puro
+    doc.setFillColor(255, 255, 255)
     
-    // Dibujar fondo con estilo TCG
-    doc.setFillColor(240, 240, 245)     // Fondo claro
-    doc.rect(0, 0, 210, 297, 'F')       // Rectángulo de fondo completo
-    
-    // Barra superior
-    doc.setFillColor(...primaryColor)
-    doc.rect(0, 0, 210, 30, 'F')
-    
-    // Decoraciones estilo TCG
-    // Borde decorativo
-    doc.setDrawColor(...accentColor)
-    doc.setLineWidth(1.5)
-    doc.roundedRect(10, 35, 190, 250, 3, 3, 'S')
-    
-    // Elementos decorativos - Estilo tarjeta
-    doc.setDrawColor(...goldColor)
-    doc.setLineWidth(0.5)
-    doc.roundedRect(12, 37, 186, 246, 2, 2, 'S')
-    
-    // Encabezado con estilo TCG
-    doc.addImage(createTCGHeaderImage(), 'PNG', 30, 5, 150, 20)
-    
-    // Información del torneo en un cuadro de estilo TCG
-    doc.setFillColor(245, 245, 250, 0.9)  // Fondo semi-transparente
-    doc.roundedRect(15, 40, 180, 20, 2, 2, 'F')
-    doc.setDrawColor(...accentColor)
-    doc.setLineWidth(0.3)
-    doc.roundedRect(15, 40, 180, 20, 2, 2, 'S')
-    
-    // Información del torneo
+    // Título simple en negro
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(12)
-    doc.setTextColor(...primaryColor)
-    doc.text(`TORNEO: ${t.meta.name.toUpperCase()}`, 20, 50)
+    doc.setFontSize(14)
+    doc.setTextColor(0, 0, 0)  // Negro
+    doc.text('COMUNIDAD CSWO - ARENA MANAGER', 105, 15, {align: 'center'})
+    
+    // Línea divisora sutil
+    doc.setLineWidth(0.2)
+    doc.setDrawColor(200, 200, 200) // Gris muy claro
+    doc.line(15, 20, 195, 20)
+    
+    // Información del torneo muy simple
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.text(`Torneo: ${t.meta.name}`, 15, 30)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
-    doc.text(`Fecha: ${t.meta.date}`, 20, 56)
-    doc.text(`Ronda: ${roundCounter}`, 170, 56, {align: 'right'})
+    doc.text(`Fecha: ${t.meta.date}`, 15, 37)
+    doc.text(`Ronda: ${roundCounter}`, 195, 37, {align: 'right'})
     
     // Iniciar posición Y para el contenido
-    let y = 70
+    let y = 50
     
     // PDF para rondas
     if (type === 'rounds') {
@@ -506,28 +484,31 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
       y += 15
       
       t.rounds.forEach(r => {
-        // Encabezado de ronda con estilo TCG
-        doc.setFillColor(...primaryColor)
-        doc.setDrawColor(...goldColor)
-        doc.roundedRect(15, y-5, 180, 10, 1, 1, 'FD')
-        doc.setFontSize(12)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(255, 255, 255)  // Texto blanco
-        doc.text(`RONDA ${r.number}`, 105, y, { align: 'center' })
-        y += 10
-        
-        // Tabla de emparejamientos
-        doc.setDrawColor(...darkGray)
-        doc.setFillColor(245, 245, 250)  // Fondo claro para tabla
-        doc.setLineWidth(0.1)
-        
-        // Encabezado personalizado para emparejamientos
-        doc.setFillColor(0, 80, 140)  // Azul para encabezado
-        doc.roundedRect(15, y-7, 180, 10, 1, 1, 'F')
-        doc.setTextColor(255, 255, 255)  // Texto blanco
+        // Encabezado de ronda minimalista
+        doc.setTextColor(0, 0, 0)  // Negro
         doc.setFontSize(11)
         doc.setFont('helvetica', 'bold')
-        doc.text('EMPAREJAMIENTOS', 105, y, {align: 'center'})
+        doc.text(`RONDA ${r.number}`, 15, y)
+        
+        // Línea simple debajo
+        doc.setDrawColor(0, 0, 0)  // Negro
+        doc.setLineWidth(0.3)
+        doc.line(15, y+2, 195, y+2)
+        y += 10
+        
+        // Tabla de emparejamientos - sin estilos especiales
+        doc.setDrawColor(220, 220, 220)  // Gris claro
+        doc.setLineWidth(0.1)
+        
+        // Encabezado simple de texto para emparejamientos
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(0, 0, 0)  // Negro
+        doc.text('EMPAREJAMIENTOS', 15, y)
+        
+        // Línea debajo
+        doc.setLineWidth(0.3)
+        doc.line(15, y+2, 195, y+2)
         y += 10
         
         // Filas de la tabla
@@ -542,21 +523,24 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
           if (y > 270) { 
             doc.addPage()
             y = 40 
-            // Repetir encabezado en la nueva página
-            doc.setFillColor(...primaryColor)
-            doc.roundedRect(15, y-5, 180, 10, 1, 1, 'F')
-            doc.setFontSize(12)
-            doc.setTextColor(255, 255, 255)
-            doc.text(`RONDA ${r.number} (continuación)`, 105, y, { align: 'center' })
+            // Repetir encabezado en la nueva página - estilo minimalista
+            doc.setDrawColor(0, 0, 0)  // Negro
+            doc.setLineWidth(0.3)
+            doc.line(15, y-5, 195, y-5)
+            doc.setFontSize(11)
+            doc.setTextColor(0, 0, 0)  // Negro
+            doc.text(`RONDA ${r.number} (continuación)`, 15, y)
             y += 10
             
-            // Encabezado personalizado para la continuación
-            doc.setFillColor(0, 80, 140)  // Azul para encabezado
-            doc.roundedRect(15, y-7, 180, 10, 1, 1, 'F')
-            doc.setTextColor(255, 255, 255)  // Texto blanco
+            // Encabezado simple de texto para continuación
             doc.setFontSize(11)
             doc.setFont('helvetica', 'bold')
-            doc.text('EMPAREJAMIENTOS (continuación)', 105, y, {align: 'center'})
+            doc.setTextColor(0, 0, 0)  // Negro
+            doc.text('EMPAREJAMIENTOS (continuación)', 15, y)
+            
+            // Línea debajo
+            doc.setLineWidth(0.3)
+            doc.line(15, y+2, 195, y+2)
             y += 8
           }
         })
@@ -625,7 +609,7 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
     // Leyenda
     y += 10
     doc.setFontSize(9)
-    doc.setTextColor(...darkGray)
+    doc.setTextColor(100, 100, 100)  // Gris medio
     doc.text('V: Victorias | E: Empates | D: Derrotas | OMW%: Porcentaje de victorias de oponentes', 105, y, {align: 'center'})
     
     // Pie de página con estilo
@@ -633,113 +617,31 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
     doc.save(`Torneo_${slugify(t.meta.name)}_${type==='final' ? 'Clasificacion_Final' : 'Clasificacion'}.pdf`)
   }
   
-  // Función auxiliar para crear imagen de encabezado estilo TCG
-  function createTCGHeaderImage() {
-    // Crear un canvas para generar la imagen
-    const canvas = document.createElement('canvas')
-    canvas.width = 600
-    canvas.height = 80
-    const ctx = canvas.getContext('2d')
-    
-    // Fondo degradado
-    const gradient = ctx.createLinearGradient(0, 0, 600, 0)
-    gradient.addColorStop(0, '#003366')
-    gradient.addColorStop(0.5, '#0059b3')
-    gradient.addColorStop(1, '#003366')
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, 600, 80)
-    
-    // Añadir efectos de brillo
-    ctx.fillStyle = 'rgba(255,255,255,0.1)'
-    ctx.beginPath()
-    ctx.moveTo(0, 0)
-    ctx.lineTo(600, 0)
-    ctx.lineTo(450, 80)
-    ctx.lineTo(0, 80)
-    ctx.closePath()
-    ctx.fill()
-    
-    // Destellos
-    for (let i = 0; i < 5; i++) {
-      const x = Math.random() * 600
-      const y = Math.random() * 80
-      const radius = Math.random() * 2 + 1
-      ctx.fillStyle = 'rgba(255,255,255,0.6)'
-      ctx.beginPath()
-      ctx.arc(x, y, radius, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    
-    // Texto principal
-    ctx.font = 'bold 40px Arial'
-    ctx.fillStyle = '#FFFFFF'
-    ctx.textAlign = 'center'
-    ctx.shadowColor = '#00BFE1'
-    ctx.shadowBlur = 15
-    ctx.fillText('COMUNIDAD CSWO', 300, 45)
-    
-    // Subtítulo
-    ctx.font = '16px Arial'
-    ctx.shadowBlur = 5
-    ctx.fillText('ARENA MANAGER', 300, 65)
-    
-    return canvas.toDataURL('image/png')
-  }
+  // Ya no se necesita esta función ya que usamos un título simple
   
-  // Función para dibujar una fila de tabla con estilo TCG
+  // Función ultra-minimalista para dibujar una fila de tabla
   function drawTableRow(doc, columns, y, isHeader = false, isHighlighted = false) {
     const cellWidths = [15, 90, 20, 15, 15, 15, 25]  // Ancho de cada columna
     const xStart = 15
     let xPos = xStart
     
-    // Color de fondo según tipo
-    if (isHeader) {
-      // Gradiente para encabezados
-      const headerColor = [0, 110, 185]  // Azul oscuro para encabezados
-      const headerColorEnd = [0, 80, 140]  // Azul más oscuro para gradiente
-      
-      // Simular gradiente con rectángulos pequeños
-      const totalWidth = cellWidths.reduce((a, b) => a + b, 0);
-      for (let i = 0; i < totalWidth; i++) {
-        const ratio = i / totalWidth;
-        const r = Math.floor(headerColor[0] + ratio * (headerColorEnd[0] - headerColor[0]));
-        const g = Math.floor(headerColor[1] + ratio * (headerColorEnd[1] - headerColor[1]));
-        const b = Math.floor(headerColor[2] + ratio * (headerColorEnd[2] - headerColor[2]));
-        doc.setFillColor(r, g, b);
-        doc.rect(xPos + i, y-5, 1, 7, 'F');
-      }
-    } else if (isHighlighted) {
-      // Filas destacadas con efecto brillante
-      doc.setFillColor(221, 235, 247)  // Azul claro para destacados
-      doc.rect(xPos, y-5, cellWidths.reduce((a, b) => a + b, 0), 7, 'F')
-      
-      // Efecto de brillo sutil
-      doc.setFillColor(255, 255, 255, 0.2)
-      doc.circle(xPos + 10, y-2, 3, 'F')
+    // Sin colores de fondo, solo una línea horizontal muy sutil
+    doc.setDrawColor(220, 220, 220)  // Gris muy claro
+    doc.setLineWidth(0.1)  // Línea casi invisible
+    
+    // Solo poner una línea horizontal si no es encabezado
+    if (!isHeader) {
+      doc.line(xStart, y+2, xStart + cellWidths.reduce((a, b) => a + b, 0), y+2)
     } else {
-      // Filas normales con degradado muy sutil
-      const normalColor = [245, 245, 250]
-      const normalColorEnd = [235, 235, 240]
-      
-      const totalWidth = cellWidths.reduce((a, b) => a + b, 0);
-      for (let i = 0; i < totalWidth; i++) {
-        const ratio = i / totalWidth;
-        const r = Math.floor(normalColor[0] + ratio * (normalColorEnd[0] - normalColor[0]));
-        const g = Math.floor(normalColor[1] + ratio * (normalColorEnd[1] - normalColor[1]));
-        const b = Math.floor(normalColor[2] + ratio * (normalColorEnd[2] - normalColor[2]));
-        doc.setFillColor(r, g, b);
-        doc.rect(xPos + i, y-5, 1, 7, 'F');
-      }
+      // Para encabezados, usar una línea un poco más gruesa
+      doc.setLineWidth(0.3)
+      doc.line(xStart, y+2, xStart + cellWidths.reduce((a, b) => a + b, 0), y+2)
     }
     
-    // Dibujar borde redondeado para mejor apariencia
-    doc.setDrawColor(200, 200, 220);
-    doc.roundedRect(xPos, y-5, cellWidths.reduce((a, b) => a + b, 0), 7, 1, 1, 'S');
-    
-    // Dibujar texto
-    doc.setTextColor(isHeader ? 255 : 0, isHeader ? 255 : 0, isHeader ? 255 : 0)
+    // Texto negro para todo
+    doc.setTextColor(0, 0, 0)  // Negro
     doc.setFont('helvetica', isHeader ? 'bold' : 'normal')
-    doc.setFontSize(isHeader ? 9 : 9)
+    doc.setFontSize(9)
     
     columns.forEach((text, i) => {
       // Alineación según columna
@@ -753,149 +655,70 @@ ${duplicates.length ? `Se omitieron ${duplicates.length} jugadores duplicados.` 
         doc.text(text, xPos + 2, y)
       }
       
-      // Dibujar líneas de separación de columnas más sutiles
-      if (i < columns.length - 1) {
-        doc.setDrawColor(220, 220, 230);
-        doc.setLineWidth(0.1);
-        doc.line(xPos + cellWidths[i], y-4, xPos + cellWidths[i], y+1)
-      }
+      // Sin líneas verticales entre columnas para un diseño más minimalista
       
       xPos += cellWidths[i]
     })
-    
-    // No añadir línea horizontal inferior, ya tenemos el borde redondeado
   }
   
-  // Nueva función para dibujar enfrentamientos con estilo VS
+  // Función ultra-minimalista para dibujar emparejamientos
   function drawMatchRow(doc, tableNumber, player1, player2, y) {
     // Dimensiones y posiciones
     const xStart = 15
     const totalWidth = 180
-    const cardHeight = 10
     
-    // Color de fondo para la tarjeta de enfrentamiento
-    doc.setFillColor(240, 245, 252)  // Azul muy claro
-    doc.roundedRect(xStart, y-6, totalWidth, cardHeight, 3, 3, 'F')
+    // Sin fondo ni rectángulos
     
-    // Borde de la tarjeta
-    doc.setDrawColor(180, 190, 210)
-    doc.setLineWidth(0.3)
-    doc.roundedRect(xStart, y-6, totalWidth, cardHeight, 3, 3, 'S')
+    // Línea horizontal muy sutil para separar emparejamientos
+    doc.setDrawColor(220, 220, 220)  // Gris muy claro
+    doc.setLineWidth(0.1)  // Casi invisible
+    doc.line(xStart, y+4, xStart + totalWidth, y+4)
     
-    // Número de mesa con estilo de insignia
-    doc.setFillColor(0, 110, 185)  // Azul oscuro
-    doc.circle(xStart + 12, y-1, 6, 'F')
-    
-    // Texto del número de mesa
-    doc.setTextColor(255, 255, 255)  // Blanco
-    doc.setFontSize(8)
+    // Texto del número de mesa - negro simple
+    doc.setTextColor(0, 0, 0)  // Negro
+    doc.setFontSize(9)
     doc.setFont('helvetica', 'bold')
-    doc.text(String(tableNumber), xStart + 12, y-1, {align: 'center'})
+    doc.text(`Mesa ${tableNumber}:`, xStart, y)
     
     // Nombre del jugador 1
-    doc.setTextColor(0, 0, 0)  // Negro
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'bold')
-    doc.text(player1, xStart + 25, y-1, {align: 'left', maxWidth: 55})
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.text(player1, xStart + 30, y)
     
-    // Círculo VS en el centro con efecto de brillo
-    doc.setFillColor(255, 215, 0)  // Dorado
-    doc.circle(xStart + 90, y-1, 7, 'F')
-    
-    // Efecto de brillo en el círculo VS
-    doc.setFillColor(255, 240, 150)  // Amarillo claro
-    doc.circle(xStart + 88, y-3, 2, 'F')
-    
-    // Texto VS
-    doc.setTextColor(150, 70, 0)  // Marrón dorado
-    doc.setFontSize(7)
-    doc.setFont('helvetica', 'bold')
-    doc.text('VS', xStart + 90, y-1, {align: 'center'})
+    // Texto VS simple
+    doc.setFont('helvetica', 'normal')
+    doc.text('-', xStart + 110, y, {align: 'center'})
     
     // Nombre del jugador 2
-    doc.setTextColor(0, 0, 0)  // Negro
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'bold')
-    doc.text(player2, xStart + 155, y-1, {align: 'right', maxWidth: 55})
-    
-    // Efecto de sombra sutil
-    doc.setDrawColor(200, 200, 220)
-    doc.setLineWidth(0.2)
-    doc.roundedRect(xStart+0.5, y-5.5, totalWidth-1, cardHeight-1, 3, 3, 'S')
+    doc.text(player2, xStart + 180, y, {align: 'right'})
   }
   
-  // Función para añadir un encabezado de sección con estilo TCG
+  // Función ultra-minimalista para añadir un encabezado de sección 
   function addSectionHeader(doc, title, y) {
-    // Barra decorativa con gradiente
-    const primaryColor = [0, 110, 185]  // Azul oscuro
-    const secondaryColor = [0, 60, 120]  // Azul más oscuro para gradiente
-    
-    // Crear un gradiente lineal horizontal
-    doc.saveGraphicsState();
-    const width = 180;
-    const height = 12;
-    const x = 15;
-    const y0 = y-7;
-    
-    // Simular un gradiente con rectángulos
-    for (let i = 0; i < width; i++) {
-      const ratio = i / width;
-      const r = Math.floor(primaryColor[0] + ratio * (secondaryColor[0] - primaryColor[0]));
-      const g = Math.floor(primaryColor[1] + ratio * (secondaryColor[1] - primaryColor[1]));
-      const b = Math.floor(primaryColor[2] + ratio * (secondaryColor[2] - primaryColor[2]));
-      doc.setFillColor(r, g, b);
-      doc.rect(x + i, y0, 1, height, 'F');
-    }
-    doc.restoreGraphicsState();
-    
-    // Efecto de brillo
-    doc.setFillColor(255, 255, 255, 0.2);
-    doc.circle(180, y-1, 8, 'F');
-    
-    // Detalles decorativos
-    doc.setDrawColor(255, 215, 0)  // Dorado
-    doc.setLineWidth(0.5)
-    doc.line(15, y+5, 195, y+5)
-    
-    // Borde con efecto metálico
-    doc.setDrawColor(0, 60, 120)  // Azul más oscuro
-    doc.roundedRect(15, y-7, 180, 12, 1, 1, 'S')
-    
-    // Texto con efecto de sombra
-    doc.setTextColor(0, 40, 80)  // Color de sombra
-    doc.setFontSize(14)
+    // Sin barras de colores, solo texto en negrita subrayado
+    doc.setTextColor(0, 0, 0)  // Negro
+    doc.setFontSize(11)
     doc.setFont('helvetica', 'bold')
-    doc.text(title, 106, y+1, {align: 'center'})
+    doc.text(title, 15, y)
     
-    // Texto principal
-    doc.setTextColor(255, 255, 255)  // Blanco
-    doc.text(title, 105, y, {align: 'center'})
+    // Línea simple debajo del texto
+    doc.setDrawColor(0, 0, 0)  // Negro
+    doc.setLineWidth(0.3)
+    doc.line(15, y+2, 195, y+2)
   }
   
-  // Función para añadir pie de página con estilo TCG
+  // Función ultra-minimalista para añadir pie de página
   function addFooter(doc) {
     const pageCount = doc.internal.getNumberOfPages()
     
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i)
       
-      // Barra inferior
-      doc.setFillColor(0, 110, 185)  // Azul oscuro
-      doc.rect(0, 287, 210, 10, 'F')
-      
-      // Texto del pie de página
-      doc.setTextColor(255, 255, 255)  // Blanco
+      // Texto del pie de página sin líneas ni colores
+      doc.setTextColor(120, 120, 120)  // Gris claro
       doc.setFontSize(8)
       doc.setFont('helvetica', 'normal')
-      doc.text(`CSWO Team - Arena Manager | Página ${i} de ${pageCount} | ${new Date().toLocaleDateString()}`, 105, 293, {align: 'center'})
-      
-      // Número de página con estilo
-      doc.setDrawColor(255, 215, 0)  // Dorado
-      doc.setFillColor(0, 80, 140)   // Azul más oscuro
-      doc.circle(195, 292, 5, 'FD')
-      doc.setTextColor(255, 255, 255) // Blanco
-      doc.setFontSize(8)
-      doc.text(String(i), 195, 294, {align: 'center'})
+      doc.text(`Página ${i} de ${pageCount} | ${new Date().toLocaleDateString()}`, 105, 287, {align: 'center'})
     }
   }
   const genLink = () => {
